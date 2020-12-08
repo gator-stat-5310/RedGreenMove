@@ -1,0 +1,76 @@
+---
+title: "Untitled"
+author: "Malik Awan & Jas Sur"
+date: "11/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(quantmod)
+
+```
+
+## Red to Green move
+
+I came up with a day trading strategy which i want to test. strategy is simple. Any FAANG stock that opens up few percent below the previous closing price, will rally back to the previous closing price. FAANG is an acronym that refers to five prominent publicly traded American technology companies: Facebook (FB), Amazon (AMZN), Apple (AAPL), Netflix (NFLX); and Alphabet (GOOG) (formerly known as Google). for example, if Apple’s closing price on monday was 100 and Tuesday opening price is 99, which is 1% below the monday’s closing price, according to my strategy, the probabily of stock going back to 100, at least for a moment, is very high. since its a day trade, we buy at the open and sell at the previous closing price. There are two things that i want to test. first is, what percent change has a higher probability of winning the trade and 2nd, is volume a good indicator. For this analysis, i am going to use historic stock price data.
+
+```{R}
+
+## creating a function that can get any stock price from a given time period.
+
+FAANG <- function(ticker, source="yahoo", start_date="2013-01-01", end_date = "2020-12-08")
+{
+  stock_data <- getSymbols(ticker, src = source, from = start_date, to = end_date, auto.assign = FALSE)
+  stock_data <- stock_data[,1:5] 
+  ## we dont need adjusted stock price for this analysis so we will drop that column 
+  stock_data <- stock_data[,c(1,4,2,3,5)]
+  return(stock_data)
+}
+
+```
+
+
+## Logistic regression
+
+```{r}
+## since we are interested in FAANG stocks, we will only use these stock 
+facebook <- FAANG("FB")
+
+# convert variable data type to dataframe.
+facebook <- as.data.frame(facebook)
+
+
+summary(facebook)
+facebook["Percent_Difference"] = (lead(facebook$FB.Open) - facebook$FB.Close)/lead(facebook$FB.Open)
+
+## round up your percentage 
+facebook["Percent_Difference"] <- round(facebook$Percent_Difference,4)
+library(data.table)
+
+facebook["Percent_Difference"] <- shift(facebook$Percent_Difference,1)
+win_loss = ifelse(facebook$FB.High >  shift(facebook$FB.Close) & facebook$Percent_Difference < 0 ,"Win", "loss")
+
+facebook["Win_Loss"] <-as.factor(win_loss) 
+str(facebook)
+
+summary(facebook)   
+
+glm.fits <- glm(Win_Loss~FB.Open+FB.Close, data=facebook, family = "binomial")
+
+glm.probs <- predict(glm.fits, type = "response")
+glm.probs[1:10]
+
+#filter_data <- filter(facebook, Percent_Difference < 0)
+#summary(filter_data)
+
+contrasts(facebook$Win_Loss)
+
+glm.pred = rep("Win", length(facebook$Win_Loss))
+glm.pred[glm.probs > .5] = "loss"
+
+confusion <- table(glm.pred, facebook$Win_Loss) 
+print(confusion)
+mean(glm.pred==facebook$Win_Loss)
+```
